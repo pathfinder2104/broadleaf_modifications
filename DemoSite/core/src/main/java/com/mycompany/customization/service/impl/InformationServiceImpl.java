@@ -5,6 +5,7 @@ import com.mycompany.customization.dao.InformationDao;
 import com.mycompany.customization.service.InformationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
@@ -21,16 +22,19 @@ public class InformationServiceImpl implements InformationService {
 
 
     @Override
+    @Transactional("blTransactionManager")
     public void saveInformation(Information information) {
         informationDao.saveInformation(information);
     }
 
     @Override
+    @Transactional("blTransactionManager")
     public Information updateInformation(Information information) {
         return informationDao.updateInformation(information);
     }
 
     @Override
+    @Transactional("blTransactionManager")
     public void deleteInformation(Information information) {
         informationDao.deleteInformation(information);
     }
