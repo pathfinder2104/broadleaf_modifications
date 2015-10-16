@@ -1,6 +1,7 @@
 package com.mycompany.customization.api;
 
 import com.mycompany.customization.Information;
+import com.mycompany.customization.impl.InformationImpl;
 import com.mycompany.customization.service.InformationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -32,7 +33,7 @@ public class InformationResource {
 
     @POST
     @Consumes("application/json")
-    public Response createInformation(Information information) {
+    public Response createInformation(InformationImpl information) {
         SpringBeanAutowiringSupport.processInjectionBasedOnCurrentContext(this);
         informationService.saveInformation(information);
         String success = "SUCCESS";

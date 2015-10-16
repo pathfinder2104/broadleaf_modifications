@@ -22,17 +22,24 @@ public class InformationDaoImpl implements InformationDao {
 
     @Override
     public void saveInformation(Information information) {
+        entityManager.getTransaction().begin();
         entityManager.persist(information);
+        entityManager.getTransaction().commit();
     }
 
     @Override
     public Information updateInformation(Information information) {
-        return entityManager.merge(information);
+        entityManager.getTransaction().begin();
+        Information info = entityManager.merge(information);
+        entityManager.getTransaction().commit();
+        return info;
     }
 
     @Override
     public void deleteInformation(Information information) {
+        entityManager.getTransaction().begin();
         entityManager.remove(information);
+        entityManager.getTransaction().commit();
     }
 
     @Override

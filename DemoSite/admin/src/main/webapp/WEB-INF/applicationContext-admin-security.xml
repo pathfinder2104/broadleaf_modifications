@@ -32,7 +32,7 @@
     <sec:http pattern="/resetPassword" security="none" />
     <sec:http pattern="/sendResetPassword" security="none" />
     <!-- Following is added by AYUSHYA -->
-    <sec:http pattern="/rest" security="none" />
+    <sec:http pattern="/rest/**" security="none" />
 
     <!-- Set up Spring security for the application -->
     <sec:http auto-config="false" authentication-manager-ref="blAdminAuthenticationManager" 
