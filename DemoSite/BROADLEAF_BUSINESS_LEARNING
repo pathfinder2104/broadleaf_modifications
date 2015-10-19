@@ -1,0 +1,251 @@
+##############################################################################################################################################################################
+# Resource:http://www.broadleafcommerce.com/docs/core/current/broadleaf-concepts/key-aspects-and-configuration/features-and-architecture                                     #
+#                                                                                                                                                                            #
+##############################################################################################################################################################################
+
+CATALOG:
+Broadleaf provides flexible product & category organization. Core feature of the framework is to provide ability to extend this
+catalog to match the specific needs of the organization. We can manage the product & catagories using the admin UI module.
+
+PROMOTION SYSTEM:
+Highly flexible promotion system for your promotions, BLC admin can manage the following type of promotions.
+    - Percent Off/Dollor Off/ Fixed Price
+    - Order, Item, Shipping level promotions.
+    - Buy one get one promotion.
+    - Promotion based on the attribute of customer, cart, catalog.
+
+CMS (Content Management System):
+Support for end-user managed static pages.
+
+
++++++++++++++ Actual Broadleaf modules ++++++++++++++
+-> broadleaf-common
+    A collection of classes shared by common-modules.
+-> broadleaf-framework
+    Core broadleaf framework classes.
+-> broadleaf-framework-web
+    Spring MVC controllers and related items.
+-> broadleaf-profile
+    Customer profile related classes, utility classes, email, configuration merge
+-> broadleaf-profile-web
+    Spring MVC controllers and related items supporting the profile module
+-> broadleaf-instrument
+    Allows for runtime instrumentation to override certain Broadleaf annotations
+-> broadleaf-open-admin-platform
+    Framework for creating extensible administration GUIs for Hibernate managed domains
+-> broadleaf-contentmanagement-module
+    A full-featured content management system that is managed via the administration tool
+-> broadleaf-admin-module
+    Contents: Broadleaf Commerce specific administration module that plugs into the open admin platform
+
+++++++++++++ Merge Configuraion ++++++++++++++
+-> The configuration is being managed in the web.xml files.
+-> There are two kinds of files mentioned in this web.xml under two different parameters
+    - patchConfigLocation
+        Core spring configuration based files.
+
+    - contextConfigLocation
+        Spring-MVC related configuration based files.
+
+-> Now for merging configurations:
+    Broadleaf has inbuilt intelligent capacity to merge the configuration of differnt properties file provided under the
+    "patchConfigLocation" using a MergeConfigLoader specified as a listener as shown below.
+
+    <listener>
+        <listener-class>org.broadleafcommerce.common.web.extensibility.MergeContextLoaderListener</listener-class>
+    </listener>
+
+-> This listener uses two strategies to merge the configuration:
+
+
+   Strategy 1: Set/List/Map FactoryBeans
+
+   This is the newer of the two strategies in Broadleaf, and all new configuration is written in this pattern. The easiest way to show this strategy is by example. Let's take a look at some configuration that lives in a Broadleaf applicationContext file:
+
+   <bean id="blDialectProcessors" class="org.springframework.beans.factory.config.SetFactoryBean">
+       <property name="sourceSet">
+           <set>
+               <ref bean="blAddSortLinkProcessor" />
+               <ref bean="blCategoriesProcessor" />
+               ... other bean references ...
+           </set>
+       </property>
+   </bean>
+   <bean id="blDialect" class="org.broadleafcommerce.common.web.dialect.BLCDialect">
+       <property name="processors" ref="blDialectProcessors" />
+   </bean>
+
+   What we have here is a bean called blDialect that has a property in it called processors which takes a Set of things that implement the Thymeleaf IProcessor. This applicationContext file also defines another bean called blDialectProcessors of type SetFactoryBean. This means that Spring will do some processing for this SetFactoryBean, and when it is injected into the processors property, it will be transformed into a Set.
+
+   We are able to contribute an additional processor to this Set without copy-pasting the entire blDialectProcessors bean. We do so with the following configuration:
+
+   <bean id="blDialectAdditionalProcessors" class="org.springframework.beans.factory.config.SetFactoryBean">
+       <property name="sourceSet">
+           <set>
+               <ref bean="blAdditionalProcessorOne"/>
+               <ref bean="blAdditionalProcessorTwo"/>
+           </set>
+       </property>
+   </bean>
+   <bean class="org.broadleafcommerce.common.extensibility.context.merge.LateStageMergeBeanPostProcessor">
+       <property name="collectionRef" value="blDialectAdditionalProcessors" />
+       <property name="targetRef" value="blDialectProcessors" />
+   </bean>
+
+   This additional configuration triggers the creation of a new bean, blDialectAdditionalProcessors that then defines two extra processors that we want to add to the blDialect processors property. Secondly, we define a LateStageMergeBeanPostProcessor that will merge our new bean into the existing bean. Then, when the existing bean is injected into blDialect, it will contain our extra entries.
+
+   This strategy is applicable for adding entries into any pre-defined Broadleaf beans.
+
+
+  NOTE:>>>>> ************* WE SHOULD MOSTLY USE THE FIRST STRATEGY.
+
+
+############### Persistence Configuration ##################
+-> Broadleaf uses 3 data sources by default.
+-> webDS
+    Main datasource containing most of the tables in the broadleaf.
+
+-> webSecureDS
+    This is to use to provide secure data storage in order to provide PCI compliance.
+
+-> webContentDS
+
+
+##### How to define custom persistence unit?
+Additional Persistence Units
+
+It may be necessary to define additional persistence units for your application (over and above those persistence units required by Broadleaf). Additional configuration is required to account for this. Here's how to achieve this.
+
+In the blMergedDataSources bean defined above, we list various available datasources. First, we must add a new one:
+
+<entry key="jdbc/myData" value-ref="myDS"/>
+
+Second, you would add a new datasource bean. Again, you can use any method of acquiring a valid datasource via Spring. Here's one that uses JNDI:
+
+<jee:jndi-lookup id="myDS" jndi-name="jdbc/myDS"/>
+
+Here, we have created a new entity manager factory for our new persistence unit. Please note, all persistence units (even your additional persistence unit) are managed through the original blPersistenceUnitManager. You can use this approach to build in as many persistence units as you like.
+
+<bean id="entityManagerFactoryMyPU" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+    <property name="persistenceUnitManager" ref="blPersistenceUnitManager"/>
+    <property name="persistenceUnitName" value="myPU"/>
+    <property name="jpaVendorAdapter">
+        <bean class="org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter"/>
+    </property>
+</bean>
+
+NOTE: Use the blPersistenceUnitManager and use it as factory to create more persistence units by adding persistence.xml
+
+
+
+######### Caching #########
+-> BLC uses Ehcache for caching purposes. For the caching to work we must use the id as "blCacheManager" to enable the BLC to
+recognize this bean as cache manager and merge it with existing cache manager.
+-> For this purpose the BLC uses its customized class for the caching purpose.
+
+
+######### Database Configuration ##########
+-> We have different files under the runtime-properties directory.
+
+-> Each file has its own purpose. i.e. for example if you define necessary properties which are there in common-properties.xml
+in integrationqa.properties and then select the build to be "integrationqa" HOW TO DO THIS??? NOT YET CLEAR.
+
+Then in this case it would when deployed for integration environment, it will be able to use that configuration defined inside the
+integrationqa.properties file. This feature provides flexibility on the environment switching.
+
+->
+
+########### MAIN ENTITIES #############
+-> Product & SKU : Product to Sku (Relationship is like for a given Product there will be at least 1 Sku without this the product CAN NOT exists),
+A product in broadleaf cannot exists without Sku, a Product always have atleast one default SKU associated with it.
+    For example a T-Shirt is a product but with this product can have multiple sizes ("small", "medium" and "large") and multiple
+    shades(blue", "yellow", "green") associated with it.
+
+And hence for each combination there will be a SKU created and hence there will be 9 SKUs for this TShirt will be there.
+All these Skus are related by ProductOptions and ProductOptionValues.
+
+ProductOptions would be like: Color and Size, WHILE
+ProductOptionValues would be like: Blue, Yellow, Red, Small, Large, Medium etc.
+So in this way with this T-Shirt there would be 10 SKUs associated, 1 would be the DEFAULT ONE and other 9 would be like for different size and
+color combinations.
+
+WHY THIS STRUCTURE?
+This structure allows various constraints around inventory and allows you the flexibility to specify the SPECIFIC PRICING FOR a PARTICULAR KIND OF
+COMBINATION (i.e. SKU).
+
+
+-> Sku: This entity has pricing information associated with it, It is the SKU which is sold/added to the cart.
+   SKU is the concrete representation of a product and hence it has Size, Dimention etc.
+
+
+-> (Order)Cart:
+Order in broadleaf represent Completed order with associated payment details, shipping information, items,
+- Order that is in PROCESS is a cart.
+- Order that is in NAMED state is a wishlist.
+
+### EXTENDING SERVICES:
+-> WHEN EVER WE EXTEND ANY SERVICE WE NEED TO OVERRIDE THE "id" OF THAT SERVICE i.e AS SHOWN BELOW
+
+Before our new service extension becomes active, we must first register it with Broadleaf Commerce.
+Since we're extending the CartService, we need to override the key id "blCartService":
+
+<bean id="blCartService" class="com.mycompany.order.service.MyCartServiceImpl"/>
+
+
+Once this bean definition in place (i.e. in the application context), The broadleaf commerce will now instantiate the MyCartServiceImpl
+as and when a cartService is required.
+
+-> Caveat(WARNING): Most of the services in broadleaf uses the @Transactional to manage transactions, this means that spring will wrap the
+service implementation within a JDK proxy, by default JDK proxies cast to their interfaces and not to their concrete implementation.
+
+In the above mentioned case of MyCartServiceImpl if we try to cast it to MyCartServiceImpl it will throw a classcastexception.
+
+-> This could be problematic if you are adding more methods to your implementation. Hence it would be advisable to create an interface MyCartService
+add all the necessary methods in it and then use it in place when you want to inject the MyCartServiceImpl interface.
+
+
+***** Enumerations *****
+-> Broad leaf provides two data structures to store the enumeration like data, a BroadleafEnumerationType and DataDrivenEnumeration
+    Both are just a collection of String values.
+
+ ** BroadleafEnumerationType: This is used to provide predefined values in the Business Logic.
+    An example of BroadleafEnumerationType is as follow:
+        public class SomeType implements Serializable, BroadleafEnumerationType {
+
+            public static final FulfillmentType DIGITAL = new FulfillmentType("DIGITAL", "Digital");
+                public static final FulfillmentType PHYSICAL_SHIP = new FulfillmentType("PHYSICAL_SHIP", "Physical Ship");
+                public static final FulfillmentType PHYSICAL_PICKUP = new FulfillmentType("PHYSICAL_PICKUP", "Physical Pickup");
+                public static final FulfillmentType PHYSICAL_PICKUP_OR_SHIP = new FulfillmentType("PHYSICAL_PICKUP_OR_SHIP", "Physical Pickup or Ship");
+                public static final FulfillmentType GIFT_CARD = new FulfillmentType("GIFT_CARD", "Gift Card");
+                @Deprecated
+                public static final FulfillmentType SHIPPING = new FulfillmentType("SHIPPING", "Shipping");
+
+                public static FulfillmentType getInstance(final String type) {
+                    return TYPES.get(type);
+                }
+
+                private String type;
+                private String friendlyType;
+        }
+
+ ** DataDrivenEnumeration: This is used to provide the variable set of values inside the places like drop-down menus in the admin panel.
+    An example of the DataDrivenEnumeration is as follow:
+     This in contrast with the BroadleafEnumerationType, differs in this way, that the BroadleafEnumerationType consists of
+     fixed set of hard coded values, while the values of the DataDrivenEnumerations are populated with values from the database.
+
+   The admin console provides the configuration screen to create and edit the DataDrivenEnumeration.
+
+@AdminPresentation is used for Styling and placing the field, while
+@AdminPresentationDataDrivenEnumeration is used to specify that the field will be assigned a values from the specific
+Subset of DataDrivenEnumerationValues values.
+
+
+
+
+
+
+
+
+
+
+
