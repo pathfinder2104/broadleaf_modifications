@@ -1,6 +1,6 @@
 ##############################################################################################################################################################################
 # Resource:http://www.broadleafcommerce.com/docs/core/current/broadleaf-concepts/key-aspects-and-configuration/features-and-architecture                                     #
-#                                                                                                                                                                            #
+# http://www.broadleafcommerce.com/docs/core/current/broadleaf-concepts                                                                                                      #
 ##############################################################################################################################################################################
 
 CATALOG:
@@ -239,11 +239,448 @@ add all the necessary methods in it and then use it in place when you want to in
 @AdminPresentationDataDrivenEnumeration is used to specify that the field will be assigned a values from the specific
 Subset of DataDrivenEnumerationValues values.
 
+########### WORKFLOW #############
+-> Broadleaf provides key phases for the default workflows such as:
+    checkout, pricing, and cart operations etc.
+-> All the work flows are defined in the Spring's application context file.
+-> Following is the basic configuration for a sample workflow
+
+         <!-- Pricing Workflow configuration -->
+        <!-- FOLLOWING ARE THE ACTIVITIES WHICH WE WANT AS PART OF THE WORKFLOW -->
+        <bean p:order="1000" id="blOfferActivity" class="org.broadleafcommerce.core.pricing.service.workflow.OfferActivity" />
+        <bean p:order="2000" id="blConsolidateFulfillmentFeesActivity" class="org.broadleafcommerce.core.pricing.service.workflow.ConsolidateFulfillmentFeesActivity" />
+        <bean p:order="3000" id="blFulfillmentItemPricingActivity" class="org.broadleafcommerce.core.pricing.service.workflow.FulfillmentItemPricingActivity" />
+        <bean p:order="4000" id="blFulfillmentGroupMerchandiseTotalActivity" class="org.broadleafcommerce.core.pricing.service.workflow.FulfillmentGroupMerchandiseTotalActivity" />
+        <bean p:order="5000" id="blFulfillmentGroupPricingActivity" class="org.broadleafcommerce.core.pricing.service.workflow.FulfillmentGroupPricingActivity" />
+        <bean p:order="6000" id="blShippingOfferActivity" class="org.broadleafcommerce.core.pricing.service.workflow.ShippingOfferActivity" />
+        <bean p:order="7000" id="blTaxActivity" class="org.broadleafcommerce.core.pricing.service.workflow.TaxActivity" />
+        <bean p:order="8000" id="blTotalActivity" class="org.broadleafcommerce.core.pricing.service.workflow.TotalActivity" />
+        <bean p:order="9000" id="blAdjustOrderPaymentsActivity" class="org.broadleafcommerce.core.pricing.service.workflow.AdjustOrderPaymentsActivity" />
+
+
+        <!-- ACTUAL WORK FLOW -->
+        <bean id="blPricingWorkflow" class="org.broadleafcommerce.core.workflow.SequenceProcessor">
+            <property name="processContextFactory">
+                <bean class="org.broadleafcommerce.core.pricing.service.workflow.PricingProcessContextFactory"/>
+            </property>
+            <property name="activities">
+                <!-- A WORKFLOW IS CREATED USING STEPS/ACTIVITIES AS SHOWN BELOW. -->
+                <list>
+                    <ref bean="blOfferActivity" />
+                    <ref bean="blConsolidateFulfillmentFeesActivity" />
+                    <ref bean="blFulfillmentItemPricingActivity" />
+                    <ref bean="blFulfillmentGroupMerchandiseTotalActivity" />
+                    <ref bean="blFulfillmentGroupPricingActivity" />
+                    <ref bean="blShippingOfferActivity" />
+                    <ref bean="blTaxActivity" />
+                    <ref bean="blTotalActivity"/>
+                    <ref bean="blAdjustOrderPaymentsActivity"/>
+                </list>
+            </property>
+            <property name="defaultErrorHandler">
+                <bean class="org.broadleafcommerce.core.workflow.DefaultErrorHandler">
+                    <property name="unloggedExceptionClasses">
+                        <list>
+                            <value>org.hibernate.exception.LockAcquisitionException</value>
+                        </list>
+                    </property>
+                </bean>
+            </property>
+        </bean>
+        <!-- Workflow configuration ends here -->
+
+-> Every workflow is made up of many activities.
+-> Every workflow is INSTANCE of the SEQUENCE PROCESSOR class in broadleaf.
+-> This class manages the orderly activation of various activities as well as handling error states as and when they occur.
+-> WORKFLOWS are CONFIGURED in 3 main areas PROCESS CONTEXT FACTORY, THE ACTIVITIES LIST and THE ROLL BACK HANDLER.
+    Lets see each of these 1 by 1.
+
+## PROCESS CONTEXT FACTORY:
+-> What is ProcessContextFactory?
+-> In each of the class implementing ProcessCOntextFactory we must set the property "processContextFactory".
+-> All such classes are responsible for creating an instance of a class implementing "ProcessContext" interface.
+-> In the example cconfiguration shown above we have used the PricingProcessContextFactory which in turn creates an instance of ProcessConext<Order>
+
+=> ProcessContext are generally relevent for a particular type of process.
+=> Each workflow has different type of ProcessContextFactory.
+=> An immediate exception of this is the cart work flows (add, remove, update) are having same ProcessContext and hence uses the same ProcessContextFactory.
+=>
+
+## ACTIVITIES(The property defined in the above sample configuration)
+-> This property must be filled with a list containing one or more Activities. Each Activity in the work flow is responsible for performing
+a single unit of work for example (like calculating the Tax in the TaxActivity). Composite activities can contain subordinate workflows,
+this allows one to create complex and nested workflows.
+
+## ErrorHandler( passed in the property of "defaultErrorHandler")
+-> The error handler is the error handler instance passed to the "defaultErrorHandler" property, by default we specify the "blDefaultErrorHandler"
+-> The DEFAULT ERROR HANDLER (blDefaultErrorHandler) only serves the purpose of logging the exception out in the System.out and then bubbles the exception.
+ and also stops the execution of activity.
+
+## Activity Ordering (i.e. in the configuration the ordering is defined using the p:order)
+-> the "p:order" will set the property "order" inside the Activity class.
+-> In broadleaf each of the workflow defines activities order starting from 1000, this will allow us to insert multiple custom(our activities) in
+between.
+-> Now by any means if two of the activities defined in the configuration have same ordering in that case the activities will be arranges by using the
+"in placing" that is the merging of the context defined in the "pathConfigLocation" in web.xml.
+-> It would be a good idea to implemenet custom properties in the increment of 100s i.e. 3100, 3200 so that in future we can add more of the steps in
+between.
+-> All framework activity ordering can be overridden by referencing the bean id and changing the p:order attribute
+-> NOTE: If you don't configure your activity(i.e. if you don't specify the p:order) then in that case the default order for activity would be at the
+end (i.e. when an activity is created from BaseActivity which has the following order specified by default
+    protected int order = Ordered.LOWEST_PRECEDENCE;
+
+
+## RollBackHandlers:
+-> Roll back handler allow an Activity to register its state and possibly roll back at the later stag.
+-> RollbackHandlers can perform any kind of custom code as and can operate on the state of the Activity that is passed to it.
+-> WHY ROLLBACK HANDLERS?
+    In the workflow, the entire workflow doesn't consist of a single transaction instead activity wise it contains more transactions.
+Now any error while executing any kind of activity doesn't mean that all the previous activities and the stuff done by them will be rolled back
+we have to write this in the RollBackHandlers.
+
+-> The roll back handlers are called for activities which are already COMPLETED SUCCESSFULLY, and NOT FOR THE ACTIVITY WHICH HAS FAILED currently.
+-> It is the RESPONIBILITY OF AN APPLICATION TO RECTIFY ITS OWN STATE WHEN THE ACTIVITY FAILs.
+
+
+## RollbackHandler Interface:
+-> All the RollbackHandlers implements this interface.
+-> This interface has following method:
+
+public void rollbackState(Activity<? extends ProcessContext> activity, ProcessContext processContext, Map<String, Object> stateConfiguration)
+    throws RollbackFailureException;
+
+-> This method contains all the necessary information to perform the compensating transaction.
+-> activity is the activity and processContext are provided, most imporatantly the stateConfiguration is also provided which contains the mapping
+of state of activities along with the corrosponding activity.
+-> This state information can be used for reversing the activities.
+
+## ActivityStateManager:
+-> Used for registering a Roll back handler and any accompanying state.
+-> This can be called from anywhere in the flow of execution for a workflow.(Activity, Module, ErrorHandler, etc...)
+-> To get the handle on the ActivityStateManager use following:
+    ActivityStateManagerImpl.getStateManager();
+
+-> "region" allows you to create the logic grouping of the rollback handlers.
+-> By default one should register the roll back handlers manually, this is because by default a roll back handler would require a thread specific state
+in order to achieve a viable rollback state.
+-> In case of such viable rollback state is not required then in that case we can enable implicit registration of the RollbackHandlers.
+    Example of automatic register roll back handler.
+    <bean id="myActivity"
+         class="com.test.MyActivity">
+       <property name="rollbackHandler" ref="blTestRollbackHandler"/>
+       <property name="stateConfiguration">
+           <map>
+               <entry key="testProperty" value="testValue"/>
+           </map>
+       </property>
+       <property name="automaticallyRegisterRollbackHandler" value="true"/>
+   </bean>
+
+## Implicite Vs Explicite Rollback:
+-> There might be cases where it is required, not to roll back everything instead it may be required to roll back a particular region in such cases
+we can disable the default behavior of rolling back activity wise by changing the value of the following property to false.
+
+    workflow.auto.rollback.on.error=false
+
+## ProcessContext:
+-> A common instance of Context which is passed in and out of the activity during the entire workflow.
+-> The context contains the data pertaining to the workflow.
+-> Each ProcessContext provides methods to check the state of the workflow, some of the methods are
+    isStopped() or stopProcess() methods.
+
+## Conditional Activity Execution:
+-> Activity interface provides support for skipping that particular activity based on the items in the ProcessContext. This method is executed before
+executing any Activity.
+
+## Activity:
+-> An ACTIVITY in its basic state is an instance of Activity interface, which provides various methods for executing the activity and retrieve the
+error handlers. Most activity extends from the BaseActivity class.
+-> Composite activity also extends from the BaseActivity
+
+## Error Handlers:
+->The default errorHandler just prints the exception to the System.out.
+-> The error handler allows user to execute his/her particular code when an exception has occured.
+
+##$$$$$ REMOVING A BROADLEAF WORKFLOW:
+-> EmptySequenceProcess is used for removing any particular predefined workflow, as shown below
+-> In order to remove the default checkoutWorkflow (which is NOT recommended) we should define it as follow.
+
+    <bean id="blCheckoutWorkflow" class="org.broadleafcommerce.core.workflow.EmptySequenceProcessor" />
+
+-> Some of the out of the box provided workflows are:
+blAddItemWorkflow : Used when an item is added to the cart
+blUpdateItemWorkflow : Used when an item is updated in the cart
+blRemoveItemWorkflow : Used when an item is removed from the cart
+blPricingWorkflow : Used by blPricingService (which is used by OrderService) to price an Order
+blCheckoutWorkflow : Invoked by blCheckoutService in order to complete checkout for an Order (charge payments, decrement inventory, change status to SUBMITTED, etc)
+
+
+###### CATALOG & SEARCH ######
+-> THIS REQUIRES SOME PRIOR KNOWLEDGE TO SOLR, RECOMMENDED ACTION IS TO GET THE SOLR EXAMPLE READY AND THEN TRY THIS.
+
+###### INVENTORY ######
+->
+
+
+###### PRICING ######
+-> There exists a default workflow for Pricing.
+-> "blPricingWorkflow" - this is the workflow name.
+-> Pricing Shipping: following are the out of the box implementations provided to you in broadleaf.
+
+    - Banded Price
+    - Banded Weight
+    - Fixed Price
+
+    However we can include any third part pricing like FedEX, UPS etc.
+
+*** Defining Terms:
+ * FulfilmentOption (database):
+    This simply means when you want delivery i.e. next-day, you want it by air, standard delivery or ground delivery?
+
+ * FulFillmentType (Enum):
+    This means Physical, In-Store pickup, digital delivery etc.
+
+ * FulfillmentGroup (database):
+    A grouping of OrderItems which are all shipped to the same location with same FulfillmentType.
+
+    Consider a scenario where 1 customer orders 4 items all are to be supplied at 1 - Delhi, 2- Gujarat, 3- Hariyana,
+    4-Rajasthan,
+    1- is standard deliver
+    2- Next-day
+    3- Next-day
+    4- Digital delivery
+
+    This results in four distinct FulfillmentGroups.
+    as the combination of location, speed and fulfillment types are different.
+
+-> We can add new FulfillmentOption/Fulfillment Price band as shown above(Banded price etc) directly in the database using
+some queries, refer the documentation link below for further details:
+
+    http://www.broadleafcommerce.com/docs/core/current/broadleaf-concepts/pricing/shipping
+
+    http://www.broadleafcommerce.com/docs/core/current/broadleaf-concepts
+
+
+*** You can create a FulfillmentPricingProvider: Refer the broadleaf-concepts link under Pricing/Shipping
+
+
+########## TAX ###########
+-> Broadleaf can be configured for calculating tax in number of ways.
+-> There are simple tax providers already available in broadleaf commerce.
+    - blSimpleTaxProvider
+    -
+-> You can configure the tax rate using the postal code, as shown below.
+
+    <bean id="blSimpleTaxProvider" class="org.broadleafcommerce.core.pricing.service.tax.provider.SimpleTaxProvider">
+      <property name="itemPostalCodeTaxRateMap">
+        <map>
+          <entry key="75033" value=".085" />
+          <entry key="75034" value=".085" />
+        </map>
+      </property>
+      <property name="itemStateTaxRateMap">
+        <map>
+          <entry key="TX" value=".0825" />
+        </map>
+      </property>
+    </bean>
+
+    Here the tax rate of 8.25% is applied to the sale in given postcode.
 
 
 
+-> The simple tax provider consists of following properties:
+    Property 	                                Description
+    defaultTaxRate 	                            A rate that would apply to every item in an order.
+    defaultFulfillmentGroupTaxRate 	            Default rate to apply to shipping costs. Not typically used.
+    itemPostalCodeTaxRateMap 	                A map of postal code to rate.
+    itemCityTaxRateMap 	                        A map of city to rate.
+    itemStateTaxRateMap 	                    A map of state to rate. System will match on the name or code.
+    itemCountryTaxRateMap 	                    A map of country to rate. System will match on name or code.
+    fulfillmentGroupPostalCodeTaxRateMap 	    A map of postal code to rate.
+    fulfillmentGroupCityTaxRateMap 	            A map of city to rate.
+    fulfillmentGroupStateTaxRateMap 	        A map of state to rate.
+    fulfillmentGroupCountryTaxRateMap 	        A map of country to rate.
+
+-> Creating a TaxProvider:
+   - Tax providers are utilized by Broadleaf Commerce to interface with an external provider
+    (or some custom algorithm) for tax calculation.
+   - This TaxProvider interface has following methods:
+        * calculateTaxForOrder(Order order, ModuleConfiguration config);
+        * commitTaxForOrder(Order order, ModuleConfiguration config);
+        * cancelTax(Order order, ModuleConfiguration config);
+
+    ** ModuleConfiguration is the database entity.
+
+#### Payment
+-> Earlier payment module was dependent on the Core + Common
+-> After version 3.1 it's now dependent only on the common, as common contains the REST Request and REST Response DTO classes
+for the same.
+-> Payment module is now dependent on the Common module of Broadleaf and Broadleaf's common module interacts with Broadleaf's
+CORE module.
+-> Broadleaf Commons contains the payment provider interfaces.
+
+## Payment Gateway Interfaces:
+-> PaymentGatewayConfiguration: This bean defines the parameters required for the configuration of a particular payment gateway.
+-> PaymentGatewayConfigurationService: Each payment gateway module should configure an instance of this.
+    In order to provide multiple payment gateways in the applications, instances defined of PaymentGatewayConfigurationService
+    for differnt payment providers should be registered with the PaymentGatewayConfigurationServiceProvider instance.
+-> PaymentGatewayCheckoutService: Generic Module to allow payment to be added to order.
+-> PaymentGatewayCreditCardService: Payment providers allows you to manage customer/cards and allows you to create a transaction
+    using tokenized customer/payment method. This might be an extra feature of the payment provider for which they will charge you.
+-> PaymentGatewayCustomerService: Same as PaymentGatewayCreditCardService.
+-> PaymentGatewayFraudService: This allows us to integrate fraud prevention APIs provided by the Payment gateways, this includes
+additional validation on address etc.
+-> PaymentGatewayHostedService: Certain payment gateways allow you to use a hosted solution i.e. they will redirect you to a page
+    hosted by them, then they will capture all the details necessary and then records the transaction details.
+-> PaymentGatewayReportingService: This interface allows us to fetch the details of the Transaction after the transaction is been
+submitted to gateway.
+-> PaymentGatewayRollbackService: This allows each module to provide its own implementation of roll back mechanisms.
+-> PaymentGatewaySubscriptionService: Some gateways allows you to create form for recurring billing by creating subscription profile.
+-> PaymentGatewayTamperProofSealService: Used to check whether the provided order id and Customer details have been tampered with
+    or not, to use this one should call the verifySeal() method on the order id and customer id provided. This involves the concept of
+    secret key of the merchant.
+-> PaymentGatewayTransactionConfirmationService: This API is called by the checkout workflow in order to check whether the payment on
+the transaction is confirmed/settled. In this case if an error occurs the workflow should invoke the rollback handlers.
+-> PaymentGatewayTransactionService: This interface provides method to create the basic BILLABLE credit card transaction, and to make
+    a server to server API call.
+-> PaymentGatewayTransparentRedirectService: The purpose of this API is to create a hash or some secure token and place it in hidden
+form on the html page, the submit on this form requires these elements to be POSTed to the payment gateway provider for further processing.
+
+-> PaymentGatewayWebResponsePrintService: This is a utility which helps in transalting the Request parameters & Request attributes
+ in the a single string. This is useful when setting the raw response fields on a PaymentResponseDTO.
+
+-> PaymentGatewayWebResponseService: The purpose of this interface is to provide an API that will translate the RESPONSE comming from the
+Payment Gateway to the PaymentResponseDTO.
 
 
+##### Transaction Life Cycle:
+-> Intial transaction state (in all cases) would be either AUTHORIZED or AUTHORIZED AND CAPTURE. this (either AUTHORIZED
+or AUTHORIZED AND CAPTURE) is configurable using this method in PaymentGatewayConfigurationService.isConfigureAutorizedAndCapture()
+if set to true then AUTHORIZED AND CAPTURE otherwise only AUTHORIZED.
+
+-> Reverse Authorize, Capture, Void and Refund:
+    a. Once a transaction initialized and sent to processor then it will have either AUTHORIZED or AUTHORIZED_CAPTURE state.
+        (some gateway uses the term "Sale" to represent the same thing)
+    b. From this point if a transaction is just authorized then you can either REVERSE AUTHORIZE or CAPTURE it.
+    c. Once the transaction has been CAPTURED either from a capture request or from initially creating an authorized and capture request)
+        there is a period where money hasn't left the Card Issuer's bank into the merchant's bank, this PHASE is known as the
+        "BEING SUBMITTED FOR SETTLEMENT".
+    d. DURING the phase of "BEING SUBMITTED FOR SETTLEMENT" a transaction can be "VOIDED".
+    e. Once the fund transfer is completed the transaction is in the "SETTLED" state.
+    f. Once the transaction is been "SETTLED" then and then only it can be "REFUNDED"
+
+    The state terminology might get changed from one to another payment gateway.
+
+#### Understanding the Payment Gateways:
+-> Each of the payment gateway provider follows some pattern, there are interfaces in BLC which can be matched with these patterns
+and find the appropriate one to use.
+-> All completed orders should have at least 1 OrderPayment,
+    This OrderPayment should have at least 1 confirmed and successful transaction of type AUTHORIZED or AUTHORIZED AND CAPTURE.
+
+Broadleaf has some predefined payment types:
+
+    Credit Card
+    Gift Card
+    Bank Account
+    Check
+    Electronic Check
+    Wire
+    Money Order
+    Customer Credit
+    Collect on delivery (can also be used for cash)
+    Third Party Account (e.g. PayPal Express Checkout)
+
+### Handling Payment Rollback Scenarios:
+-> If by any means the payment needs to be rolled back then for each Payment provider integrations provided by the broadleaf
+  contain an implementation of PaymentGatewayRollbackService, using this we can roll back any transaction for that payment provider.
+
+### Payment Security and PCI Compliance:
+-> We have to deal with PCI compliance if we are accessing the customer's credit card details, if we are not accessing anything related
+to customer's credit card even remotely then we don't need to worry about PCI compliance. This is mostly provided to us by the payment
+gateways.
+
+
+### Encryption:
+Currently the broadleaf doesn't provide that much effective implementation, the user may have to override the behavior for the
+encryption,
+
+
+
+<<<<<<<<<<<<<< BROADLEAF DEPENDENCY >>>>>>>>>>>>>>
+
+ <!--Broadleaf libraries -->
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>broadleaf-common</artifactId>
+                <version>${blc.version}</version>
+                <type>jar</type>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>broadleaf-profile</artifactId>
+                <version>${blc.version}</version>
+                <type>jar</type>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>broadleaf-profile-web</artifactId>
+                <version>${blc.version}</version>
+                <type>jar</type>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>broadleaf-framework</artifactId>
+                <version>${blc.version}</version>
+                <type>jar</type>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>broadleaf-framework-web</artifactId>
+                <version>${blc.version}</version>
+                <type>jar</type>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>broadleaf-admin-module</artifactId>
+                <version>${blc.version}</version>
+                <type>jar</type>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>broadleaf-contentmanagement-module</artifactId>
+                <version>${blc.version}</version>
+                <type>jar</type>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>broadleaf-open-admin-platform</artifactId>
+                <version>${blc.version}</version>
+                <type>jar</type>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>broadleaf-menu</artifactId>
+                <version>${blc.menu.version}</version>
+                <type>jar</type>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.broadleafcommerce</groupId>
+                <artifactId>integration</artifactId>
+                <version>${blc.version}</version>
+                <type>jar</type>
+                <classifier>tests</classifier>
+                <scope>test</scope>
+            </dependency>
 
 
 
